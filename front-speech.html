@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Recording & Query App</title>
+    <style>
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .button-group {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .status {
+            margin: 10px 0;
+            color: #666;
+        }
+        .response-container {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .similar-texts {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Voice Recording & Query App</h1>
+
+        <div class="button-group">
+            <h2>Add to Knowledge Base:</h2>
+            <button id="recordButton">Start Recording</button>
+            <div id="status" class="status"></div>
+            <div id="transcription"></div>
+        </div>
+
+        <div class="button-group">
+            <h2>Query Knowledge Base:</h2>
+            <button id="queryButton">Start Query</button>
+            <div id="queryStatus" class="status"></div>
+            
+            <div id="queryResponse" class="response-container" style="display: none;">
+                <h3>Response:</h3>
+                <div id="responseText"></div>
+                <button id="playResponseButton">Play Response</button>
+                
+                <div class="similar-texts">
+                    <h4>Similar Entries:</h4>
+                    <div id="similarTexts"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let isQuerying = false;
+
+        // Initialize speech synthesis
+        const synth = window.speechSynthesis;
+
+        document.getElementById('recordButton').addEventListener('click', toggleRecording);
+        document.getElementById('queryButton').addEventListener('click', toggleQuery);
+        document.getElementById('playResponseButton').addEventListener('click', playResponse);
+
+        async function toggleRecording() {
+            const button = document.getElementById('recordButton');
+            const status = document.getElementById('status');
+
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = (event) => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        await sendAudio(audioBlob, '/save-recording');
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    button.textContent = 'Stop Recording';
+                    status.textContent = 'Recording...';
+                } catch (err) {
+                    console.error('Error accessing microphone:', err);
+                    status.textContent = 'Error accessing microphone';
+                }
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                button.textContent = 'Start Recording';
+                status.textContent = 'Processing...';
+            }
+        }
+
+        async function toggleQuery() {
+            const button = document.getElementById('queryButton');
+            const status = document.getElementById('queryStatus');
+
+            if (!isQuerying) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = (event) => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        await sendAudio(audioBlob, '/query');
+                    };
+
+                    mediaRecorder.start();
+                    isQuerying = true;
+                    button.textContent = 'Stop Query';
+                    status.textContent = 'Recording query...';
+                } catch (err) {
+                    console.error('Error accessing microphone:', err);
+                    status.textContent = 'Error accessing microphone';
+                }
+            } else {
+                mediaRecorder.stop();
+                isQuerying = false;
+                button.textContent = 'Start Query';
+                status.textContent = 'Processing query...';
+            }
+        }
+
+        async function sendAudio(audioBlob, endpoint) {
+            const formData = new FormData();
+            formData.append('audio', audioBlob);
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (endpoint === '/save-recording') {
+                    document.getElementById('status').textContent = 'Recording saved!';
+                    document.getElementById('transcription').textContent = `Transcription: ${data.text}`;
+                } else if (endpoint === '/query') {
+                    document.getElementById('queryStatus').textContent = 'Query processed!';
+                    document.getElementById('queryResponse').style.display = 'block';
+                    document.getElementById('responseText').textContent = data.answer;
+                    
+                    const similarTextsHtml = data.similar_texts
+                        .map(text => `<p>${text}</p>`)
+                        .join('');
+                    document.getElementById('similarTexts').innerHTML = similarTextsHtml;
+                }
+            } catch (err) {
+                console.error('Error sending audio:', err);
+                const status = endpoint === '/save-recording' 
+                    ? document.getElementById('status')
+                    : document.getElementById('queryStatus');
+                status.textContent = 'Error processing audio';
+            }
+        }
+
+        function playResponse() {
+            const responseText = document.getElementById('responseText').textContent;
+            
+            // Cancel any ongoing speech
+            synth.cancel();
+
+            // Create a new utterance
+            const utterance = new SpeechSynthesisUtterance(responseText);
+            
+            // Optional: Customize the voice
+            // const voices = synth.getVoices();
+            // utterance.voice = voices[0]; // Choose a specific voice if desired
+            
+            // Optional: Customize speech parameters
+            utterance.rate = 1.0;  // Speed of speech (0.1 to 10)
+            utterance.pitch = 1.0; // Pitch (0 to 2)
+            utterance.volume = 1.0; // Volume (0 to 1)
+
+            // Speak the text
+            synth.speak(utterance);
+        }
+    </script>
+</body>
+</html>
