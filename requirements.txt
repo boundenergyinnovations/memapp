@@ -1,0 +1,8 @@
+Flask
+flask-cors
+speechrecognition
+openai
+numpy
+scipy
+pydub
+Werkzeug
